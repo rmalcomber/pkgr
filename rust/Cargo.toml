@@ -1,0 +1,23 @@
+[package]
+name = "pkgr"
+version = "0.1.0"
+edition = "2021"
+description = "Pick and run a script from package.json or deno.json"
+
+[dependencies]
+# The only dependency: Win32 console bindings, which are FFI declarations
+# rather than code, so they cost nothing at link time. JSON parsing and the
+# picker are both hand-rolled.
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.59"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Console",
+]
+
+[profile.release]
+opt-level = "z"     # optimise for size rather than speed
+lto = "fat"         # whole-program optimisation
+codegen-units = 1   # no parallel codegen, so more can be merged away
+panic = "abort"     # no unwind tables or landing pads
+strip = true        # no symbols, no debug info

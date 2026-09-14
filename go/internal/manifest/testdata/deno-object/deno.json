@@ -1,0 +1,12 @@
+{
+  "tasks": {
+    "build": {
+      "description": "Bundle the app",
+      "command": "deno bundle main.ts"
+    },
+    "all": {
+      "dependencies": ["build", "test"]
+    },
+    "test": "deno test -A"
+  }
+}

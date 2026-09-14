@@ -1,0 +1,16 @@
+{
+  "name": "demo",
+  "version": "1.0.0",
+  "homepage": "https://example.com//docs",
+  "packageManager": "pnpm@9.1.0",
+  "scripts": {
+    "zebra": "node zebra.js",
+    "build": "tsc -p .",
+    "alpha": "node alpha.js",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.0",
+    "nested": { "deeply": [1, 2, { "three": true }] }
+  }
+}
