@@ -133,7 +133,11 @@ pub fn package_manager(m: &Manifest, field: &str) -> String {
 
     // Corepack format, e.g. "pnpm@9.1.0". An unrecognised name falls through to
     // lockfile detection rather than producing a command that cannot run.
-    let name = field.split('@').next().unwrap_or_default().to_lowercase();
+    let name = field
+        .split('@')
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
     if matches!(name.as_str(), "npm" | "pnpm" | "yarn" | "bun") {
         return name;
     }

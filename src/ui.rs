@@ -223,17 +223,23 @@ fn render(v: &View<'_>) -> (String, usize) {
 
 /// Case-insensitive substring match over the name and command, which is what
 /// filtering a script list actually needs.
+///
+/// Case is folded for ASCII only. Script and task names are ASCII in practice,
+/// and full Unicode folding would link std's case-mapping tables. Non-ASCII
+/// characters still match, just case-sensitively.
 fn matching(tasks: &[Task], filter: &str) -> Vec<usize> {
-    if filter.is_empty() {
-        return (0..tasks.len()).collect();
-    }
-    let needle = filter.to_lowercase();
     (0..tasks.len())
         .filter(|&i| {
-            tasks[i].name.to_lowercase().contains(&needle)
-                || tasks[i].command.to_lowercase().contains(&needle)
+            contains_ignore_ascii_case(&tasks[i].name, filter)
+                || contains_ignore_ascii_case(&tasks[i].command, filter)
         })
         .collect()
+}
+
+/// `haystack.contains(needle)`, ignoring ASCII case, without allocating.
+fn contains_ignore_ascii_case(haystack: &str, needle: &str) -> bool {
+    let (h, n) = (haystack.as_bytes(), needle.as_bytes());
+    n.is_empty() || h.windows(n.len()).any(|w| w.eq_ignore_ascii_case(n))
 }
 
 /// Renders one row as "name    command", clipped to the terminal.
@@ -941,5 +947,28 @@ mod tests {
         assert_eq!(matching(&tasks, "vit"), vec![0, 2]);
         assert_eq!(matching(&tasks, "BUILD"), vec![1]); // case-insensitive
         assert!(matching(&tasks, "nope").is_empty());
+    }
+
+    /// Pins the deliberate trade: case is folded for ASCII only.
+    #[test]
+    fn filter_folds_ascii_case_only() {
+        let tasks = vec![task("déploy", "run"), task("ÉTAPE", "run")];
+
+        // Non-ASCII text still matches when the case is the same...
+        assert_eq!(matching(&tasks, "dépl"), vec![0]);
+        assert_eq!(matching(&tasks, "ÉTA"), vec![1]);
+        // ...and ASCII letters around it still fold.
+        assert_eq!(matching(&tasks, "DÉPL"), Vec::<usize>::new());
+        assert_eq!(matching(&tasks, "Éta"), vec![1]);
+        // But non-ASCII letters themselves do not fold.
+        assert!(matching(&tasks, "étape").is_empty());
+    }
+
+    #[test]
+    fn contains_ignore_ascii_case_edges() {
+        assert!(contains_ignore_ascii_case("anything", ""));
+        assert!(!contains_ignore_ascii_case("", "a"));
+        assert!(!contains_ignore_ascii_case("ab", "abc"));
+        assert!(contains_ignore_ascii_case("Build:Prod", "d:p"));
     }
 }

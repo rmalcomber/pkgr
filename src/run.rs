@@ -55,14 +55,16 @@ fn path_extensions() -> Vec<String> {
         .unwrap_or_else(|_| ".COM;.EXE;.BAT;.CMD".into())
         .split(';')
         .filter(|s| !s.is_empty())
-        .map(str::to_lowercase)
+        .map(str::to_ascii_lowercase)
         .collect()
 }
 
+/// PATHEXT entries are ASCII by definition, so an ASCII comparison is exact —
+/// and it avoids linking std's Unicode case-mapping tables.
 #[cfg(windows)]
 fn has_executable_extension(bin: &str, extensions: &[String]) -> bool {
-    let lower = bin.to_lowercase();
-    extensions.iter().any(|ext| lower.ends_with(ext))
+    let lower = bin.to_ascii_lowercase();
+    extensions.iter().any(|ext| lower.ends_with(ext.as_str()))
 }
 
 /// On unix the name is used exactly as given; there are no implicit extensions.
