@@ -64,13 +64,16 @@ pub fn resolve(arg: &str) -> Result<Manifest, Error> {
         PathBuf::from(arg)
     };
 
-    let start = start
-        .canonicalize()
-        .map(strip_extended_prefix)
-        .map_err(|e| Error::Io {
-            path: start.clone(),
-            msg: e.to_string(),
-        })?;
+    // `absolute` rather than `canonicalize`: it never produces Windows'
+    // `\\?\` extended-length prefix, and it leaves symlinks unresolved, so tasks
+    // run in the directory as typed. It does not touch the filesystem, so a
+    // missing path is caught explicitly to keep the "cannot read" error.
+    let io_error = |e: std::io::Error| Error::Io {
+        path: start.clone(),
+        msg: e.to_string(),
+    };
+    let start = std::path::absolute(&start).map_err(io_error)?;
+    std::fs::metadata(&start).map_err(io_error)?;
 
     let path = if start.is_dir() {
         CANDIDATES
@@ -90,29 +93,6 @@ pub fn resolve(arg: &str) -> Result<Manifest, Error> {
     let dir = path.parent().unwrap_or(Path::new(".")).to_path_buf();
 
     Ok(Manifest { path, dir, kind })
-}
-
-/// Removes the `\\?\` extended-length prefix that Windows `canonicalize`
-/// returns. It is correct but unreadable, and every path pkgr prints is one the
-/// user is meant to recognise.
-#[cfg(windows)]
-fn strip_extended_prefix(p: PathBuf) -> PathBuf {
-    match p.to_str() {
-        // A UNC path keeps its leading slashes: \\?\UNC\server\share.
-        Some(s) => match s.strip_prefix(r"\\?\UNC\") {
-            Some(rest) => PathBuf::from(format!(r"\\{rest}")),
-            None => match s.strip_prefix(r"\\?\") {
-                Some(rest) => PathBuf::from(rest),
-                None => p,
-            },
-        },
-        None => p,
-    }
-}
-
-#[cfg(not(windows))]
-fn strip_extended_prefix(p: PathBuf) -> PathBuf {
-    p
 }
 
 /// Unrecognised file names are rejected rather than assumed to be Deno.
@@ -252,10 +232,7 @@ mod tests {
 
         let m = resolve(p.to_str().unwrap()).unwrap();
         assert_eq!(m.kind, Kind::Deno);
-        assert_eq!(
-            m.dir,
-            strip_extended_prefix(d.path().canonicalize().unwrap())
-        );
+        assert_eq!(m.dir, d.path());
     }
 
     /// Paths get printed in errors and in the picker title, so the extended
