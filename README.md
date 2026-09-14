@@ -159,11 +159,30 @@ pkgr
 cargo test
 ```
 
-41 tests. The scanner carries the heaviest coverage — order preservation,
-object-form Deno tasks, escapes and surrogate pairs, structural bytes inside
-strings, comments and trailing commas, and syntax errors carrying an offset.
+70 tests, no test-only dependencies.
 
-`run` has integration tests that drive real npm and deno, covering PATH
+**The scanner** carries the heaviest coverage — order preservation, object-form
+Deno tasks, escapes and surrogate pairs, structural bytes inside strings,
+comments and trailing commas, and syntax errors carrying an offset.
+
+**The picker loop** is driven by a scripted console. `run_picker` is generic
+over a small `Console` trait — width, write, clear, read_key — so tests feed it
+a fixed list of keypresses and read back the frames it drew. That covers
+navigation and clamping, the scrolling window, filtering, backspace, and the
+redraw bookkeeping: every frame must rewind exactly the line count of the one
+before it, or the picker eats scrollback. The trait monomorphises into the real
+`Terminal`, so it costs nothing at runtime — the binary is byte-identical with
+and without it.
+
+The most valuable of those: the cursor indexes the *filtered* view, so
+committing has to map back to the original task index. Getting that wrong runs
+the wrong script, silently.
+
+Key decoding is a pure function of the two values the kernel reports, so the
+whole mapping — arrows, Home/End, Ctrl+C, printable characters, control
+characters — is tested without a console.
+
+**`run`** has integration tests that drive real npm and deno, covering PATH
 resolution, exit-code propagation and the working directory. They skip when the
 tool is absent, so the suite still passes without a JS toolchain installed.
 
@@ -172,7 +191,8 @@ One of those earns its place: npm ships a `#!/usr/bin/env bash` script named
 `CreateProcess` fail with *"%1 is not a valid Win32 application"*. A regression
 test builds that exact layout and asserts the launchable file wins.
 
-The keypress loop is not unit-tested.
+What remains untested is the Win32 layer itself — `ReadConsoleInputW`,
+`SetConsoleMode` and the screen-buffer query — which needs a real console.
 
 ## Layout
 
