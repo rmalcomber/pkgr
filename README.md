@@ -19,7 +19,7 @@ having to remember what the project calls things.
 Choosing `dev` runs `npm run dev` in that project's directory, attached to your
 terminal exactly as if you had typed it yourself.
 
-A single 252 KB binary with one dependency.
+A single 234 KB binary with one dependency.
 
 ## Usage
 
@@ -79,8 +79,9 @@ Stable toolchain, no nightly features.
 
 ## Size
 
-252 KB, from two deliberate choices. Each removed a dependency tree rather than
-trimming around one.
+234 KB. Most of that came from two deliberate choices, each removing a dependency
+tree rather than trimming around one; the rest came from assumptions about the
+input, measured one at a time.
 
 ### Hand-rolled JSON ([src/json.rs](src/json.rs))
 
@@ -114,7 +115,7 @@ strings, and JSONC comments and trailing commas handled inline as whitespace.
 - A `Drop` impl restores the console however the picker exits, panic included.
 
 Filtering is a case-insensitive substring match over name and command, which is
-what a script list actually needs.
+what a script list actually needs. Case is folded for ASCII only — see below.
 
 ### Release profile
 
@@ -134,13 +135,52 @@ In `Cargo.toml` under `[profile.release]`:
 | --- | --- |
 | `serde_json` + `dialoguer`, default release profile | 437,248 |
 | `serde_json` + `dialoguer`, size profile | 318,976 |
-| **hand-rolled, size profile** | **251,904** |
+| hand-rolled, size profile | 251,904 |
+| + ASCII-only case folding | 233,984 |
+| **+ `path::absolute` instead of `canonicalize`** | **233,472** |
 
 Hand-rolling both saved 67,072 bytes (21%) over the crate-based version at the
 same profile. The size profile itself saved 118,272 bytes (27%).
 
 A Rust hello-world built with the same profile is 104,448 bytes, so pkgr itself
-accounts for 147,456 of the total.
+accounts for 129,024 of the total.
+
+### Assumptions, measured
+
+Each candidate was applied alone, rebuilt, and kept only if the binary shrank.
+
+| Assumption | Delta | Kept |
+| --- | ---: | --- |
+| Script names, PATHEXT and package-manager names are ASCII, so fold case with `to_ascii_lowercase` instead of `to_lowercase` | −17,920 | yes |
+| Paths needn't be canonical, so use `std::path::absolute`; this also deletes the `\\?\` stripping `canonicalize` made necessary | −512 | yes |
+| Scanner error bytes are ASCII punctuation, so quote them by hand instead of `{:?}` | +512 | no |
+| Column padding by hand instead of `{:<16}` / `{:<pad$}` | +512 | no |
+| Frame rendering by hand instead of `format!` | 0 | no |
+| `opt-level = "s"` instead of `"z"` | +7,168 | no |
+
+The ASCII assumption is the only large one. `to_lowercase` links std's Unicode
+case-mapping tables, and nothing else in pkgr needed them. The trade is that
+non-ASCII letters no longer fold: typing `étape` does not find `ÉTAPE`, though
+`ÉTAPE` does. A test pins that behaviour.
+
+The three formatting experiments show `core::fmt` is effectively a fixed cost:
+std's panic handler and `eprintln!`'s own failure path keep it linked, along
+with its padding and `char` escaping. Avoiding it at call sites removes nothing.
+
+### Deliberately not done
+
+**Replacing `std::process::Command` with raw `CreateProcessW`.** This is the
+largest single item: `Command` adds 84,992 bytes to a minimal binary, so a
+hand-rolled spawn could plausibly save tens of KB here. But npm, pnpm and yarn
+are `.cmd` shims, and std applies cmd.exe-specific argument escaping — the
+CVE-2024-24576 "BatBadBut" fix — precisely because a script name in a cloned
+repository's `package.json` such as `x" & calc & "` could otherwise run
+arbitrary commands. Re-implementing that escaping correctly is the whole cost
+of `Command`, so the saving only materialises by getting it wrong.
+
+Also ruled out: dropping OS error text (std links it anyway via `eprintln!`),
+a static CRT (larger), and a platform trait for Linux/macOS (every platform
+seam is already a compile-time `#[cfg]`, so it saves nothing).
 
 Going further would mean nightly `build-std` with `panic_immediate_abort`
 (~50–80 KB) or `#![no_std]` with raw syscalls (~20–30 KB). Both cost more in
@@ -159,7 +199,7 @@ pkgr
 cargo test
 ```
 
-70 tests, no test-only dependencies.
+72 tests, no test-only dependencies.
 
 **The scanner** carries the heaviest coverage — order preservation, object-form
 Deno tasks, escapes and surrogate pairs, structural bytes inside strings,
@@ -225,11 +265,13 @@ by side:
 | --- | --- | --- |
 | Deno prototype (Cliffy) | — | 5 |
 | Go, hand-rolled | 2,180,096 | 0 |
-| **Rust, hand-rolled** | **251,904** | **1** |
+| **Rust, hand-rolled** | **233,472** | **1** |
 
-The Go port is 8.7× larger, and nearly all of the gap is the runtime: a Go
+The Go port is 9.3× larger, and nearly all of the gap is the runtime: a Go
 hello-world is 1,666,560 bytes against Rust's 104,448. Subtract each floor and
-the actual pkgr code is only 3.5× apart.
+the actual pkgr code is only 4× apart. (The Rust figure includes the later
+ASCII and `path::absolute` changes, which the Go port on `historical` never
+received.)
 
 Go needs no third-party module at all, because it reaches the Win32 console
 through `syscall.NewLazyDLL` in its standard library. Rust needs `windows-sys`
