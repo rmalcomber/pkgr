@@ -1,9 +1,0 @@
-{
-  // The task list, with a comment.
-  "tasks": {
-    "dev": "deno run -A main.ts", // trailing line comment
-    /* a block
-       comment spanning lines */
-    "fmt": "deno fmt",
-  },
-}

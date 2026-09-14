@@ -1,7 +1,0 @@
-{
-  "tasks": {
-    "dev": "deno run --watch main.ts",
-    "check": "deno check main.ts"
-  },
-  "imports": { "@std/path": "jsr:@std/path@^1" }
-}

@@ -8,64 +8,20 @@ having to remember what the project calls things.
 
   Select a task  (package.json)
 
-  > dev      vite
-    build    tsc -p . && vite build
-    test     vitest run
-    lint     eslint .
+> dev      vite
+  build    tsc -p . && vite build
+  test     vitest run
+  lint     eslint .
+
+  up/down move · type to filter · enter run · esc cancel
 ```
 
 Choosing `dev` runs `npm run dev` in that project's directory, attached to your
 terminal exactly as if you had typed it yourself.
 
-The same tool is implemented twice, in Go and in Rust, to see what each costs.
-Both ports are complete and behave identically.
-
-Both ports hand-roll the same two things — the JSON parsing and the picker — so
-this is as close to a like-for-like comparison as it gets.
-
-| | [Go](go/) | [Rust](rust/) |
-| --- | --- | --- |
-| Binary size | 2,180,096 bytes (2.08 MB) | **251,392 bytes (0.24 MB)** |
-| Third-party dependencies | **0** | 1 |
-| Runtime floor (hello world, same flags) | 1,666,560 | 104,448 |
-| Above that floor | 513,536 | 146,944 |
-| Implementation lines | 1,322 | 1,183 |
-| Test lines | 812 | 409 |
-| Tests | 39 | 38 |
-| JSON parsing | hand-rolled scanner | hand-rolled scanner |
-| Picker | hand-rolled Win32 console | hand-rolled Win32 console |
-
-**The Rust build is 8.7× smaller, and almost all of the gap is the runtime.**
-Go ships a garbage collector, a scheduler, and the reflection and stack metadata
-its stdlib needs — 1.59 MB before any of your code exists. Strip that out and
-the two ports are far closer: 514 KB of actual pkgr in Go against 147 KB in
-Rust, a 3.5× difference rather than 8.7×.
-
-Go is now within 514 KB of a floor it cannot go below. Rust's floor is 15×
-lower, which is the whole story in one number.
-
-The equivalent-code comparison is fair, but note what it cost: `go.mod` has no
-`require` block at all, because Go reaches the Win32 console through
-`syscall.NewLazyDLL` in the standard library. Rust still needs `windows-sys` for
-the same bindings. Go wins on dependency count; Rust wins on size by an order of
-magnitude.
-
-### How the Go port got there
-
-| Stage | Size | Change |
-| --- | --- | --- |
-| `charmbracelet/huh` + `encoding/json` | 4,857,344 | — |
-| Hand-rolled picker | 2,547,200 | −2,310,144 |
-| Hand-rolled JSON scanner | **2,180,096** | −367,104 |
-
-Dropping the TUI stack removed 24 third-party modules and 47% of the binary.
-Dropping `encoding/json` removed a further 367 KB, and took most of `reflect`
-with it — from 73.7 KB of code down to 29.4 KB, the remainder being what `fmt`
-still needs.
+A single 252 KB binary with one dependency.
 
 ## Usage
-
-Identical for both binaries.
 
 ```
 pkgr [path]
@@ -93,7 +49,7 @@ cancels without running anything.
 | `deno.json`, `deno.jsonc` | `deno task <name>` |
 | `package.json` | `<package manager> run <name>` |
 
-The package manager is taken from the `packageManager` field if present
+The package manager comes from the `packageManager` field if present
 (`"pnpm@9.1.0"` → `pnpm`), otherwise from whichever lockfile sits next to the
 manifest — `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`/`bun.lockb`,
 `package-lock.json` — falling back to `npm`.
@@ -114,29 +70,148 @@ manifest — `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`/`bun.lockb`,
 ## Build
 
 ```
-./build.ps1
+cargo build --release
 ```
 
-Builds both ports into `bin/` and prints their sizes. `-Port go` or
-`-Port rust` builds just one; `-Version 1.0.0` stamps a version.
+The binary lands at `target/release/pkgr.exe`. Put it anywhere on your `PATH`.
 
-Per-port detail, including the size flags and how each is tested, is in
-[go/README.md](go/README.md) and [rust/README.md](rust/README.md).
+Stable toolchain, no nightly features.
+
+## Size
+
+252 KB, from two deliberate choices. Each removed a dependency tree rather than
+trimming around one.
+
+### Hand-rolled JSON ([src/json.rs](src/json.rs))
+
+A general-purpose JSON library builds a full document tree, which needs a value
+enum covering every type and — to keep scripts in source order — an
+order-preserving map. `serde_json` with `preserve_order` pulls in `indexmap`,
+`hashbrown`, `equivalent`, `memchr`, `itoa` and `ryu` to do that.
+
+pkgr only wants two things out of a manifest: one named object of tasks, and one
+optional string. So the scanner walks the top level, keeps `scripts`/`tasks` and
+`packageManager`, and skips every other value without allocating for it. Source
+order falls out for free, because tasks are pushed as they are encountered —
+there is no map whose order needs preserving.
+
+It is a real parser, not a pattern match: string escapes including `\uXXXX`
+surrogate pairs, balanced skipping that respects structural bytes inside
+strings, and JSONC comments and trailing commas handled inline as whitespace.
+
+### Hand-rolled picker ([src/ui.rs](src/ui.rs))
+
+`dialoguer` brings `console`, `fuzzy-matcher`, `unicode-width` and
+`encode_unicode`. The picker here talks to the Win32 console directly:
+
+- `GetConsoleMode` / `SetConsoleMode` to drop line input, echo and
+  `ENABLE_PROCESSED_INPUT` — the last so Ctrl+C arrives as a key rather than
+  killing the process.
+- `ReadConsoleInputW` for keys, which reports virtual key codes, so arrows
+  arrive as events instead of ANSI escape sequences to be parsed back out.
+- VT sequences for drawing, available once
+  `ENABLE_VIRTUAL_TERMINAL_PROCESSING` is on.
+- A `Drop` impl restores the console however the picker exits, panic included.
+
+Filtering is a case-insensitive substring match over name and command, which is
+what a script list actually needs.
+
+### Release profile
+
+In `Cargo.toml` under `[profile.release]`:
+
+| Setting | Effect |
+| --- | --- |
+| `opt-level = "z"` | optimise for size over speed |
+| `lto = "fat"` | whole-program optimisation across crates |
+| `codegen-units = 1` | no parallel codegen, so more can be merged away |
+| `panic = "abort"` | no unwind tables or landing pads |
+| `strip = true` | no symbols, no debug info |
+
+### Measured
+
+| Variant | Size |
+| --- | --- |
+| `serde_json` + `dialoguer`, default release profile | 437,248 |
+| `serde_json` + `dialoguer`, size profile | 318,976 |
+| **hand-rolled, size profile** | **251,904** |
+
+Hand-rolling both saved 67,072 bytes (21%) over the crate-based version at the
+same profile. The size profile itself saved 118,272 bytes (27%).
+
+A Rust hello-world built with the same profile is 104,448 bytes, so pkgr itself
+accounts for 147,456 of the total.
+
+Going further would mean nightly `build-std` with `panic_immediate_abort`
+(~50–80 KB) or `#![no_std]` with raw syscalls (~20–30 KB). Both cost more in
+maintenance than the bytes are worth.
+
+### What that leaves
+
+```
+pkgr
+└── windows-sys        Win32 bindings: declarations, not code
+```
+
+## Tests
+
+```
+cargo test
+```
+
+41 tests. The scanner carries the heaviest coverage — order preservation,
+object-form Deno tasks, escapes and surrogate pairs, structural bytes inside
+strings, comments and trailing commas, and syntax errors carrying an offset.
+
+`run` has integration tests that drive real npm and deno, covering PATH
+resolution, exit-code propagation and the working directory. They skip when the
+tool is absent, so the suite still passes without a JS toolchain installed.
+
+One of those earns its place: npm ships a `#!/usr/bin/env bash` script named
+`npm` right beside `npm.cmd`, and resolving to the extensionless one makes
+`CreateProcess` fail with *"%1 is not a valid Win32 application"*. A regression
+test builds that exact layout and asserts the launchable file wins.
+
+The keypress loop is not unit-tested.
 
 ## Layout
 
 | Path | Purpose |
 | --- | --- |
-| [go/](go/) | the Go port |
-| [rust/](rust/) | the Rust port |
-| [old/](old/) | the original Deno prototype this started as, kept for reference |
-| `build.ps1` | builds either or both |
+| [src/main.rs](src/main.rs) | CLI, wiring, exit codes |
+| [src/manifest.rs](src/manifest.rs) | locating manifests, package-manager detection |
+| [src/json.rs](src/json.rs) | the JSONC scanner |
+| [src/ui.rs](src/ui.rs) | the picker |
+| [src/run.rs](src/run.rs) | PATH resolution and foreground execution |
 
 ## Status
 
-Windows first, as intended. Neither port has been built or run on Linux yet.
+Windows only so far.
 
-The Go port should cross-compile unchanged. The Rust port will need a termios
-raw-mode implementation for its picker: `rust/src/ui.rs` has a `#[cfg(windows)]`
-`Terminal` and a non-Windows stub that currently reports "not interactive", so
-everything except the picker already works there.
+`src/ui.rs` splits `Terminal` on `#[cfg(windows)]`, and the non-Windows stub
+reports "not interactive" — so everything except the picker already works on
+Linux. A termios raw-mode implementation of `acquire`, `read_key`, `width` and
+`clear` is the whole job. `run.rs` needs no changes: `look_path` already skips
+PATHEXT off Windows, and SIGINT reaches the child through the foreground
+process group.
+
+## History
+
+This started as a Deno prototype, then got ported twice to compare what each
+language costs for the same tool. The `historical` branch holds all three side
+by side:
+
+| Implementation | Binary | Third-party dependencies |
+| --- | --- | --- |
+| Deno prototype (Cliffy) | — | 5 |
+| Go, hand-rolled | 2,180,096 | 0 |
+| **Rust, hand-rolled** | **251,904** | **1** |
+
+The Go port is 8.7× larger, and nearly all of the gap is the runtime: a Go
+hello-world is 1,666,560 bytes against Rust's 104,448. Subtract each floor and
+the actual pkgr code is only 3.5× apart.
+
+Go needs no third-party module at all, because it reaches the Win32 console
+through `syscall.NewLazyDLL` in its standard library. Rust needs `windows-sys`
+for the same bindings. Go wins on dependency count; Rust wins on size by an
+order of magnitude.

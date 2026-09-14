@@ -1,4 +1,3 @@
-bin/
-rust/target/
+/target/
 pkgr
 pkgr.exe
