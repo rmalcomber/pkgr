@@ -1,0 +1,171 @@
+# Builds the release binaries and publishes them to the releases page.
+#
+# Triggered by pushing a tag like v0.0.1. The tag has to match the version in
+# Cargo.toml, or the run stops before building anything: the binary reports
+# CARGO_PKG_VERSION, so a mismatch would ship an asset that misreports which
+# release it came from.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in step with .github/workflows/ci.yml, which builds this same
+  # target on every push so a broken pin is found before a tag needs it.
+  NIGHTLY: nightly-2026-09-15
+
+jobs:
+  check-version:
+    name: tag matches Cargo.toml
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare
+        run: |
+          manifest="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
+          tag="${GITHUB_REF_NAME#v}"
+          echo "Cargo.toml: $manifest"
+          echo "tag:        $tag"
+          if [ "$manifest" != "$tag" ]; then
+            echo "::error::tag v$tag does not match Cargo.toml $manifest - pkgr --version would misreport"
+            exit 1
+          fi
+
+  linux:
+    name: linux x86_64 (static musl)
+    needs: check-version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable for the gates
+        run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
+
+      # A release should never ship code that has not been through the same
+      # gates as an ordinary commit.
+      - name: Gates
+        run: |
+          cargo +stable fmt --check
+          cargo +stable clippy --release --all-targets --locked -- -D warnings
+          cargo +stable test --locked
+
+      - name: Install ${{ env.NIGHTLY }}
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal --component rust-src
+          rustup target add x86_64-unknown-linux-musl --toolchain "$NIGHTLY"
+
+      # build-std rebuilds core and std from source so panic=immediate-abort
+      # applies to them too. That drops the DWARF parser, inflate and
+      # demangler that std links to symbolize a panic backtrace - around
+      # 170 KB, and roughly two thirds of the binary.
+      - name: Build
+        run: |
+          RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+            cargo +"$NIGHTLY" build --release --locked \
+            --target x86_64-unknown-linux-musl \
+            -Z build-std=std,panic_abort
+
+      - name: Stage asset
+        run: |
+          binary=target/x86_64-unknown-linux-musl/release/pkgr
+          file "$binary" | grep -q "static-pie linked" \
+            || { echo "::error::binary is not statically linked"; exit 1; }
+          "$binary" --version
+          mkdir -p dist
+          install -m 755 "$binary" dist/pkgr-linux-x86_64
+          ls -l dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgr-linux-x86_64
+          path: dist/pkgr-linux-x86_64
+          if-no-files-found: error
+
+  windows:
+    name: windows x86_64
+    needs: check-version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Gates
+        run: |
+          cargo fmt --check
+          cargo clippy --release --all-targets --locked -- -D warnings
+          cargo test --locked
+
+      # Windows stays on stable. The size win on Linux comes from discarding
+      # the backtrace machinery, which Windows never statically links in the
+      # first place - it symbolizes through dbghelp.dll, which ships with the
+      # OS - so the same trade buys far less here and costs panic messages.
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Stage asset
+        shell: bash
+        run: |
+          target/release/pkgr.exe --version
+          mkdir -p dist
+          cp target/release/pkgr.exe dist/pkgr-windows-x86_64.exe
+          ls -l dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pkgr-windows-x86_64
+          path: dist/pkgr-windows-x86_64.exe
+          if-no-files-found: error
+
+  publish:
+    name: publish release
+    needs: [linux, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Checksums
+        run: |
+          cd dist
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
+
+      # Notes come from CHANGELOG.md so they are written and reviewed with the
+      # change itself, rather than typed into a web form at release time.
+      - name: Extract release notes
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v v="$version" '
+            $0 ~ "^## " v "( |$)" { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > notes.md
+          if [ ! -s notes.md ]; then
+            echo "::error::no section for $version in CHANGELOG.md"
+            exit 1
+          fi
+          cat notes.md
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            dist/pkgr-linux-x86_64 \
+            dist/pkgr-windows-x86_64.exe \
+            dist/SHA256SUMS \
+            --title "pkgr ${GITHUB_REF_NAME}" \
+            --notes-file notes.md

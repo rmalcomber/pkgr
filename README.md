@@ -19,8 +19,21 @@ having to remember what the project calls things.
 Choosing `dev` runs `npm run dev` in that project's directory, attached to your
 terminal exactly as if you had typed it yourself.
 
-A single binary — 233 KB on Windows, 367 KB on Linux — with one dependency
-per platform.
+A single binary with one dependency per platform. The published Linux build is
+117 KB and statically linked — no glibc, no runtime dependencies at all.
+
+## Install
+
+Download a binary from [the releases
+page](https://github.com/rmalcomber/pkgr/releases) and put it on your `PATH`:
+
+| File | Platform | Notes |
+| --- | --- | --- |
+| `pkgr-linux-x86_64` | Linux, x86_64 | static musl, runs anywhere incl. Alpine |
+| `pkgr-windows-x86_64.exe` | Windows, x86_64 | |
+
+`SHA256SUMS` on each release carries the checksums. Or build from source — see
+[Build](#build).
 
 ## Usage
 
@@ -88,6 +101,15 @@ skipped with a notice when it is absent. It then builds with `--locked`, so the 
 | `-SkipChecks` | `--skip-checks` | build straight away, without the fmt, clippy and test gates |
 | `-InstallDir <dir>` | `--install-dir <dir>` | copy the finished binary there, e.g. a directory on your `PATH` |
 
+These build for the machine they run on. Cargo resolves the OS bindings by
+target, so a Windows build never compiles `libc` and a unix build never
+compiles `windows-sys` — there is no flag to set and nothing to strip out.
+
+The published Linux binary is built differently, by
+[`.github/workflows/release.yml`](.github/workflows/release.yml) rather than by
+`build.sh`. Both workflows are described under [Why the Linux binary is
+larger](#why-the-linux-binary-is-larger).
+
 On Linux, Rust links through the system C toolchain, so `build.sh` checks for
 `cc` up front (`sudo apt install build-essential` on Debian and Ubuntu).
 
@@ -97,7 +119,15 @@ produces the identical binary. The script refuses to build if any of those
 settings have been removed or weakened, so a stray edit cannot quietly ship a
 larger release.
 
-Stable toolchain, no nightly features.
+Building from source needs only a stable toolchain, and that is what
+`build.sh` and `build.ps1` use.
+
+The *published* Linux binary is the one exception: it is built on a pinned
+nightly so that `build-std` can apply `panic = immediate-abort` to the standard
+library, which is what takes it from 459 KB to 117 KB. That is release
+packaging, not a source dependency — see [Why the Linux binary is
+larger](#why-the-linux-binary-is-larger) for what the setting actually removes
+and what it costs.
 
 ## Size
 
@@ -258,9 +288,35 @@ bytes — everything pkgr adds, including the std it reaches for that a
 hello-world never does, such as `Command` and the filesystem — while the symbol
 table attributes 34,094 bytes to pkgr's own code alone.
 
-There is no stable lever for the backtrace machinery. `panic = "abort"` does
-not help: the abort path still prints a message and a backtrace first, so the
-parser stays linked.
+`panic = "abort"` does not help on its own: the abort path still prints a
+message and a backtrace first, so the parser stays linked. Removing it means
+rebuilding the standard library itself, which is a nightly feature —
+`build-std` with `panic = immediate-abort`. Every Linux build, measured:
+
+| Build | Size | Toolchain | Runtime deps | Panic message |
+| --- | ---: | --- | --- | --- |
+| glibc, dynamic (`./build.sh`) | 367,048 | stable | glibc ≥ 2.35 | yes |
+| musl, static | 459,320 | stable | none | yes |
+| musl + `build-std` | 418,480 | nightly | none | yes |
+| **musl + `build-std` + `immediate-abort`** | **116,840** | nightly | none | **no** |
+
+The last row is what the releases page ships. It is a third of the glibc build
+and half the Windows one, with no libc to satisfy at runtime. Note that
+`build-std` alone accounts for only 41 KB of that: nearly all of the win is
+`immediate-abort` discarding the backtrace machinery and the panic formatting
+that reaches it.
+
+What it costs is panic reporting. A panic aborts with no message and no
+location, so a crash on Linux is a bare `SIGABRT`. `./build.sh` still produces
+the dynamically linked stable build, which reports panics normally, and that is
+what to reach for when debugging.
+
+The pin is the other cost, and it is not theoretical: the flag this depends on
+was renamed from `-Z build-std-features=panic_immediate_abort` to
+`-Zunstable-options -Cpanic=immediate-abort`, so the documented invocation now
+fails outright. Both workflows name the same dated nightly, and CI builds this
+target on every push, so a broken pin surfaces on the commit that breaks it
+rather than on the tag that needed it.
 
 ### Assumptions, measured
 
@@ -300,11 +356,11 @@ a static CRT (larger), and a *runtime* platform trait (every platform seam is
 a compile-time `#[cfg]` selecting one of the two `Terminal` types, so dispatch
 would add code rather than remove it).
 
-Going further would mean nightly `build-std` with `panic_immediate_abort`, or
-`#![no_std]` with raw syscalls (~20–30 KB). Both cost more in maintenance than
-the bytes are worth — though on Linux the first is worth more than the ~50–80 KB
-once estimated here, since the symbol table puts the backtrace machinery alone
-at 170,581 bytes. That remains a nightly-only saving, and this stays on stable.
+This section used to rule out nightly `build-std` on an estimate of ~50–80 KB.
+That estimate was wrong by a factor of three, so the released Linux binary now
+uses it — measured below. `#![no_std]` with raw syscalls (~20–30 KB more) is
+still ruled out: it would mean reimplementing `Command`, which is the one thing
+[Deliberately not done](#deliberately-not-done) already argues against.
 
 ### What that leaves
 

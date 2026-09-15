@@ -1,0 +1,76 @@
+# Build gates on every push and pull request.
+#
+# The same three gates build.sh and build.ps1 run locally, but on both
+# platforms at once. That matters more here than it looks: the picker is
+# behind a #[cfg], so a change to one platform's terminal is never compiled
+# by the other's build, and the unix side sat as a broken stub for exactly
+# that reason.
+name: CI
+
+on:
+  push:
+    branches: [main, historical]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # Keep in step with .github/workflows/release.yml, which ships what this
+  # job proves still builds.
+  NIGHTLY: nightly-2026-09-15
+
+jobs:
+  gates:
+    name: gates (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install stable
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy
+          rustup default stable
+
+      - name: Formatting
+        run: cargo fmt --check
+
+      - name: Lint
+        run: cargo clippy --release --all-targets --locked -- -D warnings
+
+      - name: Test
+        run: cargo test --locked
+
+  release-build:
+    # The released Linux binary is built on a pinned nightly, which is the
+    # fragile part of the pipeline: the flag it depends on was renamed once
+    # already. Building it here means a broken pin surfaces on the commit
+    # that breaks it, not on the tag that needed it.
+    name: release build (pinned nightly)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ${{ env.NIGHTLY }}
+        run: |
+          rustup toolchain install "$NIGHTLY" --profile minimal --component rust-src
+          rustup target add x86_64-unknown-linux-musl --toolchain "$NIGHTLY"
+
+      - name: Build static musl binary
+        run: |
+          RUSTFLAGS="-Zunstable-options -Cpanic=immediate-abort" \
+            cargo +"$NIGHTLY" build --release --locked \
+            --target x86_64-unknown-linux-musl \
+            -Z build-std=std,panic_abort
+
+      - name: Report size and confirm it is static
+        run: |
+          binary=target/x86_64-unknown-linux-musl/release/pkgr
+          ls -l "$binary"
+          file "$binary"
+          # A dynamic section here would mean the binary picked up a runtime
+          # dependency, which is the whole thing this build exists to avoid.
+          file "$binary" | grep -q "static-pie linked" \
+            || { echo "::error::binary is not statically linked"; exit 1; }
