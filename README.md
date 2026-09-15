@@ -483,8 +483,8 @@ else in the build would compile it.
 ## History
 
 This started as a Deno prototype, then got ported twice to compare what each
-language costs for the same tool. The `historical` branch holds all three side
-by side:
+language costs for the same tool. Only the Rust port is kept; what the other
+two cost is the part worth keeping:
 
 | Implementation | Binary | Third-party dependencies |
 | --- | --- | --- |
@@ -495,8 +495,9 @@ by side:
 The Go port is 9.3× larger, and nearly all of the gap is the runtime: a Go
 hello-world is 1,666,560 bytes against Rust's 104,448. Subtract each floor and
 the actual pkgr code is only 4× apart. (The Rust figure includes the later
-ASCII and `path::absolute` changes, which the Go port on `historical` never
-received.)
+ASCII and `path::absolute` changes, which the Go port never received, and all
+three were measured on one machine with one toolchain — see the note under
+[Measured](#measured).)
 
 Go needs no third-party module at all, because it reaches the Win32 console
 through `syscall.NewLazyDLL` in its standard library. Rust needs `windows-sys`
