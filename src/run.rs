@@ -160,17 +160,27 @@ mod tests {
         }
 
         let dir = temp_dir("npm-integration");
+        // npm hands each body to a shell — cmd.exe on Windows, sh elsewhere —
+        // so the bodies have to be spelled in the intersection of the two.
+        // Parentheses are bare syntax to cmd.exe but a syntax error to sh, and
+        // sh strips single quotes where cmd.exe passes them through, so the
+        // scripts avoid both and the one body that needs them lives in a file.
         fs::write(
             dir.join("package.json"),
             r#"{
   "name": "pkgr-integration",
   "private": true,
   "scripts": {
-    "ok": "node --eval process.exit(0)",
-    "fail": "node --eval process.exit(5)",
-    "cwd": "node --eval process.exit(require('fs').existsSync('marker')?0:1)"
+    "ok": "node --eval process.exitCode=0",
+    "fail": "node --eval process.exitCode=5",
+    "cwd": "node cwd-check.js"
   }
 }"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("cwd-check.js"),
+            "process.exitCode = require('fs').existsSync('marker') ? 0 : 1;\n",
         )
         .unwrap();
         // The cwd script only passes if cmd.current_dir actually took effect.
