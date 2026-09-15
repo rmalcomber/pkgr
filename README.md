@@ -483,8 +483,12 @@ else in the build would compile it.
 ## History
 
 This started as a Deno prototype, then got ported twice to compare what each
-language costs for the same tool. Only the Rust port is kept; what the other
-two cost is the part worth keeping:
+language costs for the same tool. Only the Rust port is maintained; the other
+two are archived under the
+[`ports-archive`](https://github.com/rmalcomber/pkgr/tree/ports-archive) tag —
+`old/` the Deno prototype, `go/` the Go port, `rust/` this one before it became
+the repository itself. A tag rather than a branch because nothing builds from
+there; it stays out of the branch list and out of the language statistics.
 
 | Implementation | Binary | Third-party dependencies |
 | --- | --- | --- |
