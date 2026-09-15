@@ -22,7 +22,7 @@ jobs:
     name: tag matches Cargo.toml
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Compare
         run: |
           manifest="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
@@ -39,7 +39,7 @@ jobs:
     needs: check-version
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install stable for the gates
         run: rustup toolchain install stable --profile minimal --component rustfmt,clippy
@@ -78,7 +78,7 @@ jobs:
           install -m 755 "$binary" dist/pkgr-linux-x86_64
           ls -l dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkgr-linux-x86_64
           path: dist/pkgr-linux-x86_64
@@ -89,7 +89,7 @@ jobs:
     needs: check-version
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install stable
         run: |
@@ -117,7 +117,7 @@ jobs:
           cp target/release/pkgr.exe dist/pkgr-windows-x86_64.exe
           ls -l dist/
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: pkgr-windows-x86_64
           path: dist/pkgr-windows-x86_64.exe
@@ -130,9 +130,9 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           path: dist
           merge-multiple: true
