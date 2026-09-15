@@ -7,7 +7,9 @@
 //! sequences, which the console supports once
 //! `ENABLE_VIRTUAL_TERMINAL_PROCESSING` is switched on.
 
-use std::io::{self, Write};
+use std::io;
+#[cfg(windows)]
+use std::io::Write;
 
 use crate::json::Task;
 
@@ -41,7 +43,12 @@ impl From<io::Error> for Error {
 }
 
 /// What a keypress means to the picker.
+///
+/// Only the Windows console produces keys so far. Until a unix terminal exists
+/// the variants are never constructed off Windows, which would otherwise fail
+/// `clippy -D warnings` in build.sh. Remove the allow when that lands.
 #[derive(Debug, PartialEq, Clone, Copy)]
+#[cfg_attr(not(windows), allow(dead_code))]
 enum Key {
     Up,
     Down,

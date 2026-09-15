@@ -19,7 +19,7 @@ having to remember what the project calls things.
 Choosing `dev` runs `npm run dev` in that project's directory, attached to your
 terminal exactly as if you had typed it yourself.
 
-A single 234 KB binary with one dependency.
+A single 233 KB binary with one dependency.
 
 ## Usage
 
@@ -70,16 +70,34 @@ manifest — `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`/`bun.lockb`,
 ## Build
 
 ```
-cargo build --release
+./build.ps1      # Windows
+./build.sh       # Linux and macOS
 ```
 
-The binary lands at `target/release/pkgr.exe`. Put it anywhere on your `PATH`.
+Both scripts do the same thing. Each gates on `cargo fmt --check`, `clippy` with warnings as errors, and the
+test suite. It then builds with `--locked`, so the exact dependency versions in
+`Cargo.lock` are used, and prints the binary's size. The binary lands at
+`bin/pkgr.exe` (or `bin/pkgr`), which is ignored by git.
+
+| `build.ps1` | `build.sh` | Effect |
+| --- | --- | --- |
+| `-SkipChecks` | `--skip-checks` | build straight away, without the fmt, clippy and test gates |
+| `-InstallDir <dir>` | `--install-dir <dir>` | copy the finished binary there, e.g. a directory on your `PATH` |
+
+On Linux, Rust links through the system C toolchain, so `build.sh` checks for
+`cc` up front (`sudo apt install build-essential` on Debian and Ubuntu).
+
+The optimisations themselves live in `Cargo.toml` under `[profile.release]` — see
+[Release profile](#release-profile) — so a plain `cargo build --release`
+produces the identical binary. The script refuses to build if any of those
+settings have been removed or weakened, so a stray edit cannot quietly ship a
+larger release.
 
 Stable toolchain, no nightly features.
 
 ## Size
 
-234 KB. Most of that came from two deliberate choices, each removing a dependency
+233 KB. Most of that came from two deliberate choices, each removing a dependency
 tree rather than trimming around one; the rest came from assumptions about the
 input, measured one at a time.
 
@@ -246,14 +264,27 @@ What remains untested is the Win32 layer itself — `ReadConsoleInputW`,
 
 ## Status
 
-Windows only so far.
+Fully working on Windows. On Linux and macOS it builds, but is not yet
+interactive.
 
-`src/ui.rs` splits `Terminal` on `#[cfg(windows)]`, and the non-Windows stub
-reports "not interactive" — so everything except the picker already works on
-Linux. A termios raw-mode implementation of `acquire`, `read_key`, `width` and
-`clear` is the whole job. `run.rs` needs no changes: `look_path` already skips
-PATHEXT off Windows, and SIGINT reaches the child through the foreground
-process group.
+The Linux build is type-checked from Windows (`clippy -D warnings` against
+`x86_64-unknown-linux-gnu`), but has not been run. On Linux today, pkgr
+resolves and parses manifests and detects the package manager as normal. The
+picker is a stub, though, so instead of showing it pkgr prints the task list
+and exits 1, exactly as it does on Windows when output is redirected.
+
+What a real unix port still needs:
+
+- **A termios terminal** in `src/ui.rs`: raw mode via `tcgetattr`/`tcsetattr`
+  (clearing `ICANON`, `ECHO` and `ISIG`, but not `OPOST`), `TIOCGWINSZ` for the
+  width, and an escape-sequence decoder, since arrows arrive as `ESC [ A` rather
+  than as key codes.
+- **Interrupt handling** in `src/run.rs`. `ignore_ctrl_c` is a no-op off
+  Windows, so Ctrl+C kills pkgr along with the task and the task's exit code is
+  lost. The fix is a no-op `SIGINT` *handler*, not `SIG_IGN`: an ignored signal
+  stays ignored across `exec`, which would make the task itself immune to Ctrl+C.
+- **An execute-bit check** in `look_in`, so a non-executable file earlier on
+  `PATH` is skipped rather than chosen and failing with `EACCES`.
 
 ## History
 
