@@ -1,6 +1,8 @@
 //! Foreground execution of the chosen task.
 
 use std::env;
+#[cfg(unix)]
+use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -68,10 +70,19 @@ fn has_executable_extension(bin: &str, extensions: &[String]) -> bool {
 }
 
 /// On unix the name is used exactly as given; there are no implicit extensions.
-#[cfg(not(windows))]
+///
+/// The execute bit has to be checked, though. A shell skips a non-executable
+/// file and keeps searching, so a stray `npm` earlier on PATH must not shadow
+/// the real one — taking it would fail with EACCES instead.
+#[cfg(unix)]
 fn look_in(dir: &Path, bin: &str) -> Option<PathBuf> {
+    use std::os::unix::fs::PermissionsExt;
+
     let exact = dir.join(bin);
-    if exact.is_file() {
+    let metadata = fs::metadata(&exact).ok()?;
+    // Any of the three execute bits: which one applies depends on who is
+    // running, and the kernel is the authority on that either way.
+    if metadata.is_file() && metadata.permissions().mode() & 0o111 != 0 {
         return Some(exact);
     }
     None
@@ -113,11 +124,22 @@ fn ignore_ctrl_c() {
     }
 }
 
-#[cfg(not(windows))]
+/// The unix half of the same problem.
+///
+/// This installs a handler that does nothing rather than setting `SIG_IGN`,
+/// and the difference matters: an ignored signal stays ignored across `exec`,
+/// which would leave the task itself immune to Ctrl+C, whereas a handler is
+/// reset to the default. So pkgr survives the interrupt, the task still
+/// receives it through the foreground process group, and the task's own exit
+/// code is what gets reported.
+#[cfg(unix)]
 fn ignore_ctrl_c() {
-    // SIGINT reaches the child through the foreground process group, and the
-    // default disposition is restored per-process, so nothing to do until the
-    // unix port needs it.
+    extern "C" fn handler(_signal: libc::c_int) {}
+    // sighandler_t is an integer-width slot, so the function item has to
+    // become a pointer before it becomes an address.
+    unsafe {
+        libc::signal(libc::SIGINT, handler as *const () as libc::sighandler_t);
+    }
 }
 
 #[cfg(test)]
@@ -274,6 +296,39 @@ mod tests {
             look_in(&dir, "onlyscript").is_none(),
             "an extensionless file alone must not be reported as runnable"
         );
+
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// A shell skips a non-executable file and keeps searching PATH. Taking it
+    /// instead would shadow the real tool and fail with EACCES — the unix
+    /// counterpart of picking npm's extensionless shim on Windows.
+    #[test]
+    #[cfg(unix)]
+    fn skips_a_file_without_the_execute_bit() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let dir = temp_dir("lookpath");
+
+        // The same name twice: one not executable, one that is.
+        fs::write(dir.join("faketool"), "#!/bin/sh\necho hi\n").unwrap();
+        fs::set_permissions(dir.join("faketool"), fs::Permissions::from_mode(0o644)).unwrap();
+        assert!(
+            look_in(&dir, "faketool").is_none(),
+            "a file without the execute bit is not runnable"
+        );
+
+        fs::set_permissions(dir.join("faketool"), fs::Permissions::from_mode(0o755)).unwrap();
+        assert_eq!(
+            look_in(&dir, "faketool"),
+            Some(dir.join("faketool")),
+            "the same file is runnable once the execute bit is set"
+        );
+
+        // A directory named like the tool must not be mistaken for it, even
+        // though directories carry execute bits of their own.
+        fs::create_dir(dir.join("fakedir")).unwrap();
+        assert!(look_in(&dir, "fakedir").is_none());
 
         let _ = fs::remove_dir_all(&dir);
     }

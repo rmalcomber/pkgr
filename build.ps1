@@ -75,6 +75,18 @@ if (-not $SkipChecks) {
 
     Write-Host "Testing ..." -ForegroundColor Cyan
     Invoke-Cargo test --quiet
+
+    # The other platform's picker is behind a #[cfg], so nothing above compiles
+    # it. Without this a change here can break Linux silently, and only a build
+    # on the other machine would find out.
+    $crossTarget = 'x86_64-unknown-linux-gnu'
+    if ((rustup target list --installed) -contains $crossTarget) {
+        Write-Host "Linting $crossTarget ..." -ForegroundColor Cyan
+        Invoke-Cargo clippy --target $crossTarget --all-targets --quiet '--' -D warnings
+    }
+    else {
+        Write-Host "  skipping $crossTarget check - run: rustup target add $crossTarget" -ForegroundColor Cyan
+    }
     Write-Host ""
 }
 

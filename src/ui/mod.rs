@@ -3,9 +3,9 @@
 //! The picker loop, its rendering and its filtering live here and know nothing
 //! about the operating system: they talk to a terminal only through the
 //! `Console` trait. Each platform module supplies the one `Terminal` that
-//! implements it, so porting to a new platform is a new file rather than a new
-//! branch in the loop. `windows.rs` drives the Win32 console; `unix.rs` is
-//! still the stub it was before this split.
+//! implements it — `windows.rs` against the Win32 console, `unix.rs` against
+//! termios — so a platform port is a new file rather than a new branch in the
+//! loop.
 
 use std::io;
 
@@ -16,9 +16,9 @@ mod windows;
 #[cfg(windows)]
 use windows::Terminal;
 
-#[cfg(not(windows))]
+#[cfg(unix)]
 mod unix;
-#[cfg(not(windows))]
+#[cfg(unix)]
 use unix::Terminal;
 
 /// Most rows the list may occupy, so a project with many scripts scrolls in
@@ -42,11 +42,9 @@ impl From<io::Error> for Error {
 
 /// What a keypress means to the picker.
 ///
-/// Only the Windows console produces keys so far. Until a unix terminal exists
-/// the variants are never constructed off Windows, which would otherwise fail
-/// `clippy -D warnings` in build.sh. Remove the allow when that lands.
+/// Both platform modules decode into this, so the loop never sees a virtual
+/// key code or an escape sequence.
 #[derive(Debug, PartialEq, Clone, Copy)]
-#[cfg_attr(not(windows), allow(dead_code))]
 enum Key {
     Up,
     Down,

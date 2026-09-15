@@ -110,6 +110,18 @@ if [ "$skip_checks" = false ]; then
 
     step "Testing ..."
     cargo test --quiet
+
+    # The other platform's picker is behind a #[cfg], so nothing above compiles
+    # it. Without this a change here can break Windows silently, and only a
+    # build on the other machine would find out.
+    cross_target="x86_64-pc-windows-msvc"
+    if rustup target list --installed 2>/dev/null | grep -qx "$cross_target"; then
+        step "Linting ${cross_target} ..."
+        cargo clippy --target "$cross_target" --all-targets --quiet -- -D warnings
+    else
+        printf '  %sskipping %s check - run: rustup target add %s%s\n' \
+            "$cyan" "$cross_target" "$cross_target" "$reset"
+    fi
     echo
 fi
 

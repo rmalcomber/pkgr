@@ -19,7 +19,8 @@ having to remember what the project calls things.
 Choosing `dev` runs `npm run dev` in that project's directory, attached to your
 terminal exactly as if you had typed it yourself.
 
-A single 233 KB binary with one dependency.
+A single binary — 233 KB on Windows, 367 KB on Linux — with one dependency
+per platform.
 
 ## Usage
 
@@ -75,7 +76,10 @@ manifest — `pnpm-lock.yaml`, `yarn.lock`, `bun.lock`/`bun.lockb`,
 ```
 
 Both scripts do the same thing. Each gates on `cargo fmt --check`, `clippy` with warnings as errors, and the
-test suite. It then builds with `--locked`, so the exact dependency versions in
+test suite. Each also runs `clippy` against *the other* platform's target when
+it is installed, since the picker is behind a `#[cfg]` and nothing else in the
+build would compile it — add it with `rustup target add`, and the check is
+skipped with a notice when it is absent. It then builds with `--locked`, so the exact dependency versions in
 `Cargo.lock` are used, and prints the binary's size. The binary lands at
 `bin/pkgr.exe` (or `bin/pkgr`), which is ignored by git.
 
@@ -97,9 +101,14 @@ Stable toolchain, no nightly features.
 
 ## Size
 
-233 KB. Most of that came from two deliberate choices, each removing a dependency
-tree rather than trimming around one; the rest came from assumptions about the
-input, measured one at a time.
+233 KB on Windows, 367 KB on Linux. Most of that came from two deliberate
+choices, each removing a dependency tree rather than trimming around one; the
+rest came from assumptions about the input, measured one at a time.
+
+The 134 KB gap between the two is almost entirely one thing, and it is not
+pkgr: Linux `std` statically links a DWARF parser so that a panic can print a
+symbolized backtrace. See [Why the Linux binary is
+larger](#why-the-linux-binary-is-larger).
 
 ### Hand-rolled JSON ([src/json.rs](src/json.rs))
 
@@ -118,10 +127,16 @@ It is a real parser, not a pattern match: string escapes including `\uXXXX`
 surrogate pairs, balanced skipping that respects structural bytes inside
 strings, and JSONC comments and trailing commas handled inline as whitespace.
 
-### Hand-rolled picker ([src/ui.rs](src/ui.rs))
+### Hand-rolled picker ([src/ui/](src/ui/))
 
 `dialoguer` brings `console`, `fuzzy-matcher`, `unicode-width` and
-`encode_unicode`. The picker here talks to the Win32 console directly:
+`encode_unicode`. The picker here talks to each platform's terminal directly.
+The loop, its rendering and its filtering sit in
+[src/ui/mod.rs](src/ui/mod.rs) and know nothing about the operating system;
+they reach a terminal only through the `Console` trait, so a port is a new file
+rather than a new branch in the loop.
+
+On Windows ([src/ui/windows.rs](src/ui/windows.rs)):
 
 - `GetConsoleMode` / `SetConsoleMode` to drop line input, echo and
   `ENABLE_PROCESSED_INPUT` — the last so Ctrl+C arrives as a key rather than
@@ -131,6 +146,27 @@ strings, and JSONC comments and trailing commas handled inline as whitespace.
 - VT sequences for drawing, available once
   `ENABLE_VIRTUAL_TERMINAL_PROCESSING` is on.
 - A `Drop` impl restores the console however the picker exits, panic included.
+
+On unix ([src/ui/unix.rs](src/ui/unix.rs)) the same job takes more work,
+because a terminal delivers bytes rather than decoded keys:
+
+- `tcgetattr` / `tcsetattr` to clear `ICANON`, `ECHO` and `ISIG` — the last so
+  Ctrl+C arrives as a byte rather than killing the process, which is what
+  dropping `ENABLE_PROCESSED_INPUT` buys on Windows. `OPOST` deliberately stays
+  on: frames end their lines with a bare `\n`, which without it would step down
+  a row without returning to column 0 and shear the list into a diagonal.
+- `TIOCGWINSZ` for the width, where Windows has
+  `GetConsoleScreenBufferInfo`.
+- An escape-sequence decoder, since arrows arrive as `ESC [ A` rather than as
+  key codes. It reads to a sequence's final byte whether or not it recognises
+  it, so an unhandled one — a mouse report, a bracketed-paste marker — is
+  swallowed whole instead of leaking its tail into the filter, and it
+  reassembles UTF-8 so a multi-byte character typed into the filter arrives as
+  one `char`.
+- A bare Esc is only distinguishable from the start of a sequence by waiting,
+  so `poll` gives the rest of a sequence 50 ms to arrive. Bytes are read from
+  the file descriptor rather than through `io::stdin`, whose buffering would
+  swallow those bytes where `poll` could no longer see them.
 
 Filtering is a case-insensitive substring match over name and command, which is
 what a script list actually needs. Case is folded for ASCII only — see below.
@@ -162,6 +198,69 @@ same profile. The size profile itself saved 118,272 bytes (27%).
 
 A Rust hello-world built with the same profile is 104,448 bytes, so pkgr itself
 accounts for 129,024 of the total.
+
+On Linux:
+
+| Variant | Size |
+| --- | --- |
+| hello-world floor, same profile | 287,848 |
+| `libc` declared but unused | 287,848 |
+| **pkgr** | **367,048** |
+
+The middle row is the one that matters for the split: adding `libc` to
+`Cargo.toml` and building without calling into it moved the binary by **0
+bytes**, which is what "declarations, not code" has to mean to be worth
+claiming. The Windows binary is unchanged at 233,472, and cannot be otherwise —
+`libc` is never in its build graph.
+
+### Why the Linux binary is larger
+
+Not the C library, and not the port. Building unstripped and summing the symbol
+table by originating crate:
+
+```
+CARGO_PROFILE_RELEASE_STRIP=false cargo build --release
+nm --size-sort -S --demangle target/release/pkgr
+```
+
+
+| | Bytes | Share |
+| --- | ---: | ---: |
+| `gimli` + `addr2line` — DWARF debug-info parser | 136,388 | 48.9% |
+| everything else (std, core, alloc) | 56,285 | 20.2% |
+| **pkgr's own symbols** | **34,094** | **12.2%** |
+| `rustc_demangle` | 20,489 | 7.3% |
+| `core::fmt` | 15,073 | 5.4% |
+| `miniz_oxide` — zlib inflate | 9,570 | 3.4% |
+| `backtrace_rs` glue | 4,057 | 1.5% |
+| panic machinery | 3,044 | 1.1% |
+
+**170,581 bytes — 61% of the code — exists to symbolize a panic backtrace.**
+Linux `std` links a complete DWARF reader to map addresses back to
+file-and-line, a zlib decompressor because `.debug_*` sections may be
+compressed, and a demangler because Rust symbols need unmangling. None of it
+runs unless pkgr crashes.
+
+Windows links none of it: `std` symbolizes through `dbghelp.dll`, which ships
+with the OS. Same feature, nothing in the binary.
+
+Two independent measurements agree on this. The hello-world floors differ by
+183,400 bytes (287,848 against 104,448), and the backtrace machinery measured
+directly in the symbol table is 170,581 — 93% of the gap. Subtract it and Linux
+would land near 196 KB, *below* the Windows binary, which is consistent with
+the other half of the picture: pkgr's own code is leaner on Linux, since the
+Windows build also carries `PATHEXT` resolution and std's UTF-16 path
+conversions.
+
+The two ways of attributing pkgr's own cost measure different things and are
+both worth keeping in mind: subtracting the hello-world floor gives 79,200
+bytes — everything pkgr adds, including the std it reaches for that a
+hello-world never does, such as `Command` and the filesystem — while the symbol
+table attributes 34,094 bytes to pkgr's own code alone.
+
+There is no stable lever for the backtrace machinery. `panic = "abort"` does
+not help: the abort path still prints a message and a backtrace first, so the
+parser stays linked.
 
 ### Assumptions, measured
 
@@ -197,19 +296,30 @@ arbitrary commands. Re-implementing that escaping correctly is the whole cost
 of `Command`, so the saving only materialises by getting it wrong.
 
 Also ruled out: dropping OS error text (std links it anyway via `eprintln!`),
-a static CRT (larger), and a platform trait for Linux/macOS (every platform
-seam is already a compile-time `#[cfg]`, so it saves nothing).
+a static CRT (larger), and a *runtime* platform trait (every platform seam is
+a compile-time `#[cfg]` selecting one of the two `Terminal` types, so dispatch
+would add code rather than remove it).
 
-Going further would mean nightly `build-std` with `panic_immediate_abort`
-(~50–80 KB) or `#![no_std]` with raw syscalls (~20–30 KB). Both cost more in
-maintenance than the bytes are worth.
+Going further would mean nightly `build-std` with `panic_immediate_abort`, or
+`#![no_std]` with raw syscalls (~20–30 KB). Both cost more in maintenance than
+the bytes are worth — though on Linux the first is worth more than the ~50–80 KB
+once estimated here, since the symbol table puts the backtrace machinery alone
+at 170,581 bytes. That remains a nightly-only saving, and this stays on stable.
 
 ### What that leaves
 
 ```
 pkgr
-└── windows-sys        Win32 bindings: declarations, not code
+├── windows-sys        Win32 bindings   (windows targets only)
+└── libc               libc bindings    (unix targets only)
 ```
+
+Never both. Each is declared under a `[target.'cfg(...)'.dependencies]` key, so
+Cargo leaves the other out of the build graph entirely rather than compiling it
+and letting the linker drop it — `cargo tree --target x86_64-pc-windows-msvc`
+shows no `libc`, and the Linux tree shows no `windows-sys`. Both crates are
+extern declarations, type aliases and constants rather than code, so neither
+costs anything at link time either way.
 
 ## Tests
 
@@ -217,7 +327,9 @@ pkgr
 cargo test
 ```
 
-72 tests, no test-only dependencies.
+85 tests on Linux and 72 on Windows, no test-only dependencies. The counts
+differ because each platform's terminal, `look_in` and path handling are tested
+against that platform only; 66 of the tests are shared.
 
 **The scanner** carries the heaviest coverage — order preservation, object-form
 Deno tasks, escapes and surrogate pairs, structural bytes inside strings,
@@ -236,13 +348,31 @@ The most valuable of those: the cursor indexes the *filtered* view, so
 committing has to map back to the original task index. Getting that wrong runs
 the wrong script, silently.
 
-Key decoding is a pure function of the two values the kernel reports, so the
-whole mapping — arrows, Home/End, Ctrl+C, printable characters, control
-characters — is tested without a console.
+**Key decoding** is a pure function of what arrives from the OS on each
+platform, so both mappings are tested without a terminal. On Windows that is
+the two values the kernel reports. On unix the decoder reads through a `Bytes`
+trait rather than from stdin, so tests drive it from a fixed byte queue: every
+spelling of Home and End, CSI and SS3 arrows, modified arrows, page keys, a
+bare Esc, truncated sequences, and multi-byte UTF-8.
+
+Two of those are worth naming, because both failures are silent rather than
+loud. An unrecognised sequence must be consumed through to its final byte, or
+its tail decodes as keystrokes and lands in the filter — the test asserts that
+the key after a mouse report is the key the user actually pressed. And a
+multi-byte character must be reassembled before it reaches the filter, or
+typing `é` pushes two replacement characters into it.
 
 **`run`** has integration tests that drive real npm and deno, covering PATH
 resolution, exit-code propagation and the working directory. They skip when the
 tool is absent, so the suite still passes without a JS toolchain installed.
+npm hands each script body to a shell — `cmd.exe` on Windows, `sh` elsewhere —
+so the fixtures are spelled in the intersection of the two: no parentheses,
+which are bare syntax to one and a syntax error to the other, and no quotes,
+which one strips and the other passes through.
+
+Each platform's `look_in` is tested against the arrangement that actually
+breaks it: on Windows, npm's extensionless shim sitting next to `npm.cmd`; on
+unix, a file without the execute bit shadowing the real tool earlier on `PATH`.
 
 One of those earns its place: npm ships a `#!/usr/bin/env bash` script named
 `npm` right beside `npm.cmd`, and resolving to the extensionless one makes
@@ -259,32 +389,20 @@ What remains untested is the Win32 layer itself — `ReadConsoleInputW`,
 | [src/main.rs](src/main.rs) | CLI, wiring, exit codes |
 | [src/manifest.rs](src/manifest.rs) | locating manifests, package-manager detection |
 | [src/json.rs](src/json.rs) | the JSONC scanner |
-| [src/ui.rs](src/ui.rs) | the picker |
+| [src/ui/](src/ui/) | the picker: `mod.rs` the loop, `windows.rs` and `unix.rs` the two terminals |
 | [src/run.rs](src/run.rs) | PATH resolution and foreground execution |
 
 ## Status
 
-Fully working on Windows. On Linux and macOS it builds, but is not yet
-interactive.
+Fully working on Windows and Linux.
 
-The Linux build is type-checked from Windows (`clippy -D warnings` against
-`x86_64-unknown-linux-gnu`), but has not been run. On Linux today, pkgr
-resolves and parses manifests and detects the package manager as normal. The
-picker is a stub, though, so instead of showing it pkgr prints the task list
-and exits 1, exactly as it does on Windows when output is redirected.
+macOS shares the unix terminal and should work, but has not been run. Nothing
+in `src/ui/unix.rs` is Linux-specific — `libc` carries the `termios` layout and
+`ioctl` signature differences — so the gap is verification, not code.
 
-What a real unix port still needs:
-
-- **A termios terminal** in `src/ui.rs`: raw mode via `tcgetattr`/`tcsetattr`
-  (clearing `ICANON`, `ECHO` and `ISIG`, but not `OPOST`), `TIOCGWINSZ` for the
-  width, and an escape-sequence decoder, since arrows arrive as `ESC [ A` rather
-  than as key codes.
-- **Interrupt handling** in `src/run.rs`. `ignore_ctrl_c` is a no-op off
-  Windows, so Ctrl+C kills pkgr along with the task and the task's exit code is
-  lost. The fix is a no-op `SIGINT` *handler*, not `SIG_IGN`: an ignored signal
-  stays ignored across `exec`, which would make the task itself immune to Ctrl+C.
-- **An execute-bit check** in `look_in`, so a non-executable file earlier on
-  `PATH` is skipped rather than chosen and failing with `EACCES`.
+Each platform is checked against the other's target with `clippy -D warnings`
+as part of its build script, since the picker is behind a `#[cfg]` and nothing
+else in the build would compile it.
 
 ## History
 

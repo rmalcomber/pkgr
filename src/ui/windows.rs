@@ -2,7 +2,7 @@
 //!
 //! Key events come from `ReadConsoleInputW`, which reports virtual key codes,
 //! so arrow keys arrive as events rather than as ANSI escape sequences that
-//! would have to be parsed back out of stdin.
+//! would have to be parsed back out of stdin — the job `unix.rs` has to do.
 //! Drawing uses VT sequences, which the console supports once
 //! `ENABLE_VIRTUAL_TERMINAL_PROCESSING` is switched on.
 

@@ -5,15 +5,21 @@ edition = "2021"
 description = "Pick and run a script from package.json or deno.json"
 
 [dependencies]
-# The only dependency: Win32 console bindings, which are FFI declarations
-# rather than code, so they cost nothing at link time. JSON parsing and the
-# picker are both hand-rolled.
+# One dependency per platform, never both: the OS bindings the picker needs.
+# Both are FFI declarations rather than code, so they cost nothing at link
+# time, and Cargo leaves the other platform's out of the build graph entirely.
+# JSON parsing and the picker itself are hand-rolled.
 [target.'cfg(windows)'.dependencies.windows-sys]
 version = "0.59"
 features = [
     "Win32_Foundation",
     "Win32_System_Console",
 ]
+
+# termios for raw mode, TIOCGWINSZ for the width, signal for the interrupt
+# handler. Declarations and constants only, same as windows-sys.
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
 
 [profile.release]
 opt-level = "z"     # optimise for size rather than speed
