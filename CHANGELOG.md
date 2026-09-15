@@ -18,7 +18,18 @@ calls things, or which tool it was set up with.
 | `pkgr-linux-x86_64` | Linux, x86_64 |
 | `pkgr-windows-x86_64.exe` | Windows, x86_64 |
 
-Put either on your `PATH` and run `pkgr`. `SHA256SUMS` carries the checksums.
+Verify with `SHA256SUMS`, then put the binary on your `PATH`. A release asset
+carries no permission bit, so on Linux make it executable first and rename it
+so the command is `pkgr`:
+
+```bash
+sha256sum -c SHA256SUMS
+chmod +x pkgr-linux-x86_64
+mv pkgr-linux-x86_64 ~/.local/bin/pkgr
+```
+
+On Windows, rename `pkgr-windows-x86_64.exe` to `pkgr.exe` and drop it
+somewhere on `PATH`.
 
 The Linux binary is **statically linked against musl and has no runtime
 dependencies at all**, so it runs on any x86_64 Linux — Alpine and older

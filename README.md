@@ -32,7 +32,20 @@ page](https://github.com/rmalcomber/pkgr/releases) and put it on your `PATH`:
 | `pkgr-linux-x86_64` | Linux, x86_64 | static musl, runs anywhere incl. Alpine |
 | `pkgr-windows-x86_64.exe` | Windows, x86_64 | |
 
-`SHA256SUMS` on each release carries the checksums. Or build from source — see
+A release asset does not carry a permission bit, so on Linux the file arrives
+without one and has to be made executable:
+
+```bash
+chmod +x pkgr-linux-x86_64
+mv pkgr-linux-x86_64 ~/.local/bin/pkgr
+```
+
+The rename is what makes the command `pkgr` rather than `pkgr-linux-x86_64`;
+the binary does not care what it is called. On Windows, drop
+`pkgr-windows-x86_64.exe` somewhere on `PATH`, renamed to `pkgr.exe`.
+
+`SHA256SUMS` on each release carries the checksums — `sha256sum -c SHA256SUMS`
+on Linux, `Get-FileHash` on Windows. Or build from source, see
 [Build](#build).
 
 ## Usage
@@ -240,8 +253,15 @@ On Linux:
 The middle row is the one that matters for the split: adding `libc` to
 `Cargo.toml` and building without calling into it moved the binary by **0
 bytes**, which is what "declarations, not code" has to mean to be worth
-claiming. The Windows binary is unchanged at 233,472, and cannot be otherwise —
-`libc` is never in its build graph.
+claiming. The Windows binary is unchanged, and cannot be otherwise — `libc` is
+never in its build graph.
+
+Every figure in this section comes from one toolchain, which matters when
+comparing them to a downloaded asset: absolute size drifts with the compiler.
+The published 0.0.1 Windows binary is 237,568 bytes, built by the release
+runner on rustc 1.98.1, where the 233,472 above was measured locally on an
+older one. The deltas are all same-toolchain comparisons and stand on their
+own; the absolute numbers are a snapshot.
 
 ### Why the Linux binary is larger
 
