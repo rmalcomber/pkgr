@@ -4,6 +4,24 @@ Notable changes to pkgr. The release workflow reads the section matching a
 tag out of this file and publishes it as that release's notes, so the version
 headings and their spelling matter.
 
+## 0.0.2 - 2026-11-09
+
+macOS binaries.
+
+### Downloads
+
+| File | Platform |
+| --- | --- |
+| `pkgr-linux-x86_64` | Linux, x86_64 |
+| `pkgr-windows-x86_64.exe` | Windows, x86_64 |
+| `pkgr-macos-arm64` | macOS, Apple silicon |
+| `pkgr-macos-x86_64` | macOS, Intel |
+
+The macOS binaries are not signed or notarised; on macOS run
+`xattr -d com.apple.quarantine <file>` after downloading. CI now builds and
+tests on a macOS runner too, and the release workflow publishes tags containing
+a `-` as pre-releases.
+
 ## 0.0.1 - 2026-09-15
 
 First official release. pkgr lists the scripts in a `package.json` or the

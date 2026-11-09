@@ -1,0 +1,5 @@
+{
+  "size": "117 KB on Linux, about 233 KB on Windows",
+  "platforms": "Linux, Windows, macOS",
+  "dependencies": "none: a single static binary"
+}

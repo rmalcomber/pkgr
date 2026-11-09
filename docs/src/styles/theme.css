@@ -1,0 +1,55 @@
+/* Shared house style for malcomber.com and every project's docs: dark by default, cool slate greys, teal accent.
+   System font stack only (no web fonts): see the Floppy Rule. */
+:root,
+:root[data-theme='dark'] {
+  --sl-color-white: #eef3f8;
+  --sl-color-gray-1: #d3dce6;
+  --sl-color-gray-2: #b2bfcc;
+  --sl-color-gray-3: #8794a6;
+  --sl-color-gray-4: #4c5667;
+  --sl-color-gray-5: #323947;
+  --sl-color-gray-6: #272c36;
+  --sl-color-black: #20252e;
+  --sl-color-accent-low: #123a40;
+  --sl-color-accent: #3aa8b8;
+  --sl-color-accent-high: #8fdde8;
+  --sl-color-text-accent: #8fdde8;
+  --sl-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Release banner: blue (shared standard). */
+  --sl-color-banner-bg: #2c5fa8;
+  --sl-color-banner-text: #f2f7ff;
+}
+
+:root[data-theme='light'] {
+  --sl-color-accent-low: #cdeff3;
+  --sl-color-accent: #17727f;
+  --sl-color-accent-high: #0d4a54;
+  --sl-color-text-accent: #0d4a54;
+}
+
+/* Images: rounded, framed, never wider than the column */
+.sl-markdown-content img {
+  border-radius: 0.6rem;
+  border: 1px solid var(--sl-color-gray-5);
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.25);
+  height: auto;
+}
+.sl-markdown-content p > img:only-child,
+.sl-markdown-content p > a > img:only-child {
+  display: block;
+  margin-inline: auto;
+}
+
+/* Key / command styling (<kbd>) */
+kbd {
+  font-family: var(--sl-font-mono);
+  font-size: 0.85em;
+  padding: 0.1em 0.45em;
+  border-radius: 0.35rem;
+  border: 1px solid var(--sl-color-gray-4);
+  border-bottom-width: 2px;
+  background: var(--sl-color-gray-6);
+  color: var(--sl-color-white);
+}
+
+.sl-markdown-content table td { font-variant-numeric: tabular-nums; }

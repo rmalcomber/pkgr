@@ -1,0 +1,44 @@
+---
+// Global release banner at the top of every page (replaces Starlight's per-page banner).
+// Blue by default; projects still in beta also get a BETA badge (set `stage: 'beta'` in site.config.mjs).
+import { site } from '../site.config.mjs'
+const base = import.meta.env.BASE_URL.replace(/\/$/, '')
+const isBeta = site.stage === 'beta'
+---
+
+<div class="release-banner" role="status" data-pagefind-ignore>
+  {isBeta && <strong>BETA</strong>}
+  <span>Current release <b>v{site.version}</b></span>
+  <a href={`${base}/releases/v${site.version}/`}>Release notes</a>
+  <span aria-hidden="true">·</span>
+  <a href={site.repoUrl} rel="noopener">GitHub</a>
+</div>
+
+<style>
+  @layer starlight.core {
+    .release-banner {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      align-items: baseline;
+      gap: 0.4rem 0.7rem;
+      padding: 0.5rem 1rem;
+      font-size: var(--sl-text-sm);
+      line-height: 1.35;
+      text-align: center;
+      background: var(--sl-color-banner-bg);
+      color: var(--sl-color-banner-text);
+    }
+    .release-banner strong {
+      letter-spacing: 0.08em;
+      background: rgb(255 255 255 / 0.22);
+      padding: 0.05rem 0.45rem;
+      border-radius: 0.3rem;
+    }
+    .release-banner a {
+      color: inherit;
+      text-decoration: underline;
+      font-weight: 600;
+    }
+  }
+</style>

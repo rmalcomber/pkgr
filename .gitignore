@@ -2,3 +2,8 @@
 /bin/
 pkgr
 pkgr.exe
+
+# docs
+docs/node_modules/
+docs/dist/
+docs/.astro/

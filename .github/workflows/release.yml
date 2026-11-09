@@ -4,6 +4,11 @@
 # Cargo.toml, or the run stops before building anything: the binary reports
 # CARGO_PKG_VERSION, so a mismatch would ship an asset that misreports which
 # release it came from.
+#
+# Builds: linux x86_64 (static musl), windows x86_64, macOS arm64 and x86_64.
+# Tags containing a '-' (v0.1.0-beta) are published as pre-releases.
+# Run it by hand (Actions > Release > Run workflow) for a dry run: everything
+# is built and kept as artifacts, nothing is published.
 name: Release
 
 on:
@@ -24,6 +29,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - name: Compare
+        if: startsWith(github.ref, 'refs/tags/')
         run: |
           manifest="$(sed -n 's/^version[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' Cargo.toml | head -n 1)"
           tag="${GITHUB_REF_NAME#v}"
@@ -123,9 +129,58 @@ jobs:
           path: dist/pkgr-windows-x86_64.exe
           if-no-files-found: error
 
+  macos:
+    name: macos ${{ matrix.arch }}
+    needs: check-version
+    # Apple silicon runner. The Intel build is cross-compiled from it, so only
+    # the native arm64 job runs the gates and the binary.
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { arch: arm64, target: aarch64-apple-darwin, asset: pkgr-macos-arm64, native: true }
+          - { arch: x86_64, target: x86_64-apple-darwin, asset: pkgr-macos-x86_64, native: false }
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install stable
+        run: |
+          rustup toolchain install stable --profile minimal --component rustfmt,clippy --target ${{ matrix.target }}
+          rustup default stable
+
+      - name: Gates
+        if: matrix.native
+        run: |
+          cargo fmt --check
+          cargo clippy --release --all-targets --locked -- -D warnings
+          cargo test --locked
+
+      # macOS stays on stable, like Windows: the nightly immediate-abort trick
+      # is Linux-only. The binary is not signed or notarised.
+      - name: Build
+        run: cargo build --release --locked --target ${{ matrix.target }}
+
+      - name: Stage asset
+        run: |
+          binary=target/${{ matrix.target }}/release/pkgr
+          file "$binary"
+          if [ "${{ matrix.native }}" = "true" ]; then "$binary" --version; fi
+          mkdir -p dist
+          install -m 755 "$binary" dist/${{ matrix.asset }}
+          ls -l dist/
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}
+          if-no-files-found: error
+
   publish:
     name: publish release
-    needs: [linux, windows]
+    needs: [linux, windows, macos]
+    # Only for a pushed tag; a manual run is a dry run.
+    if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -163,9 +218,14 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          prerelease=""
+          case "$GITHUB_REF_NAME" in *-*) prerelease="--prerelease" ;; esac
           gh release create "$GITHUB_REF_NAME" \
             dist/pkgr-linux-x86_64 \
             dist/pkgr-windows-x86_64.exe \
+            dist/pkgr-macos-arm64 \
+            dist/pkgr-macos-x86_64 \
             dist/SHA256SUMS \
             --title "pkgr ${GITHUB_REF_NAME}" \
-            --notes-file notes.md
+            --notes-file notes.md \
+            $prerelease
