@@ -1,4 +1,5 @@
 # pkgr
+[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-rmalcomber-FFDD00?logo=buymeacoffee&logoColor=000000)](https://buymeacoffee.com/rmalcomber)
 
 Pick a script from `package.json` or a task from `deno.json` and run it, without
 having to remember what the project calls things.
@@ -507,3 +508,8 @@ Go needs no third-party module at all, because it reaches the Win32 console
 through `syscall.NewLazyDLL` in its standard library. Rust needs `windows-sys`
 for the same bindings. Go wins on dependency count; Rust wins on size by an
 order of magnitude.
+
+
+## Support
+
+If this is useful to you, you can [buy me a coffee](https://buymeacoffee.com/rmalcomber).
