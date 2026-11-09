@@ -29,4 +29,4 @@ cargo test
 
 ## Status
 
-Fully working on Windows and Linux. macOS shares the unix terminal code and should work, but has not been run.
+Fully working on Windows and Linux. macOS shares the unix terminal code; CI builds and tests it on a macOS runner and release binaries are published from 0.0.2, but the picker has not yet been verified by hand on a Mac.

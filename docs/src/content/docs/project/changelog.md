@@ -5,6 +5,10 @@ sidebar:
   order: 1
 ---
 
+## 0.0.2 (2026-11-09)
+
+macOS binaries: `pkgr-macos-arm64` (Apple silicon) and `pkgr-macos-x86_64` (Intel), not signed or notarised. CI now builds and tests on macOS, and tags containing a `-` are published as pre-releases. See the [0.0.2 release page](/releases/v0.0.2/).
+
 ## 0.0.1 (2026-09-15)
 
 First official release. pkgr lists the scripts in a `package.json` or the tasks in a `deno.json`, lets you pick one, and runs it with the right package manager in the right directory.

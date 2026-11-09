@@ -49,4 +49,4 @@ This should not happen: every redraw rewinds exactly the number of lines it pain
 
 ## macOS
 
-macOS shares the unix terminal code and should work, but has not been run and no binary is published. Build from source with `./build.sh`.
+The macOS binaries are not signed or notarised. If you see "cannot be opened because the developer cannot be verified", clear the quarantine flag with `xattr -d com.apple.quarantine pkgr-macos-arm64` (or allow it under System Settings → Privacy & Security). CI builds and tests the unix terminal code on macOS, but the picker has not yet been verified by hand in Terminal.app or iTerm: if something looks wrong, please open an issue with your terminal and macOS version.

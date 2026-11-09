@@ -17,8 +17,11 @@ pkgr is about 1,400 lines of Rust and one third-party dependency per platform.
 
 ## Flow
 
-```text
-args ─▶ manifest::resolve ─▶ read file ─▶ json::parse ─▶ ui::select ─▶ manifest::command ─▶ run::run
+```mermaid
+flowchart LR
+  args([args]) --> resolve[manifest::resolve] --> read[read file] --> parse[json::parse] --> select[ui::select] --> cmd[manifest::command] --> run[run::run]
+  select -.-> win[ui/windows.rs]
+  select -.-> unix[ui/unix.rs<br/>Linux + macOS]
 ```
 
 1. `resolve` turns the argument into a manifest path and kind.

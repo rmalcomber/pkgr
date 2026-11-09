@@ -1,4 +1,4 @@
-// Remark plugin: replaces {{repo}}, {{releases}}, {{version}} and {{name}} in Markdown text and URLs,
+// Remark plugin: replaces {{repo}}, {{releases}}, {{version}}, {{name}} and {{metric.*}} in Markdown text and URLs,
 // and prefixes root-relative links with the site's base path (Astro doesn't do that for Markdown links).
 import { tokenValues } from '../site.config.mjs'
 
@@ -6,7 +6,7 @@ export function tokens({ base = '' } = {}) {
   const prefix = base && base !== '/' ? base.replace(/\/$/, '') : ''
   return (tree) => {
     const sub = (s) =>
-      s.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (m, key) => {
+      s.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (m, key) => {
         const v = tokenValues[key]
         if (v === undefined) throw new Error(`Unknown token ${m}; add it to tokenValues in src/site.config.mjs`)
         return String(v)

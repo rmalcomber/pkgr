@@ -32,6 +32,8 @@ page](https://github.com/rmalcomber/pkgr/releases) and put it on your `PATH`:
 | --- | --- | --- |
 | `pkgr-linux-x86_64` | Linux, x86_64 | static musl, runs anywhere incl. Alpine |
 | `pkgr-windows-x86_64.exe` | Windows, x86_64 | |
+| `pkgr-macos-arm64` | macOS, Apple silicon | not signed or notarised |
+| `pkgr-macos-x86_64` | macOS, Intel | not signed or notarised |
 
 A release asset does not carry a permission bit, so on Linux the file arrives
 without one and has to be made executable:
@@ -43,7 +45,10 @@ mv pkgr-linux-x86_64 ~/.local/bin/pkgr
 
 The rename is what makes the command `pkgr` rather than `pkgr-linux-x86_64`;
 the binary does not care what it is called. On Windows, drop
-`pkgr-windows-x86_64.exe` somewhere on `PATH`, renamed to `pkgr.exe`.
+`pkgr-windows-x86_64.exe` somewhere on `PATH`, renamed to `pkgr.exe`. On macOS the
+steps are the same as Linux with `pkgr-macos-arm64` (or `-x86_64`); the binary is
+not signed, so clear the download quarantine flag first:
+`xattr -d com.apple.quarantine pkgr-macos-arm64`.
 
 `SHA256SUMS` on each release carries the checksums — `sha256sum -c SHA256SUMS`
 on Linux, `Get-FileHash` on Windows. Or build from source, see
@@ -473,9 +478,11 @@ What remains untested is the Win32 layer itself — `ReadConsoleInputW`,
 
 Fully working on Windows and Linux.
 
-macOS shares the unix terminal and should work, but has not been run. Nothing
-in `src/ui/unix.rs` is Linux-specific — `libc` carries the `termios` layout and
-`ioctl` signature differences — so the gap is verification, not code.
+macOS shares the unix terminal, and release binaries for Apple silicon and Intel
+are built from 0.0.2. CI compiles and tests the unix terminal code on a macOS
+runner on every push, but the interactive picker has not yet been verified by hand
+in a Mac terminal. Nothing in `src/ui/unix.rs` is Linux-specific — `libc` carries
+the `termios` layout and `ioctl` signature differences.
 
 Each platform is checked against the other's target with `clippy -D warnings`
 as part of its build script, since the picker is behind a `#[cfg]` and nothing

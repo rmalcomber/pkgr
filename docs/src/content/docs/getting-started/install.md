@@ -11,6 +11,8 @@ Download a binary from the [releases page]({{releases}}) and put it on your `PAT
 | --- | --- | --- |
 | `pkgr-linux-x86_64` | Linux, x86_64 | static musl, runs anywhere including Alpine |
 | `pkgr-windows-x86_64.exe` | Windows, x86_64 | |
+| `pkgr-macos-arm64` | macOS, Apple silicon | not signed or notarised |
+| `pkgr-macos-x86_64` | macOS, Intel | not signed or notarised |
 
 ## Linux
 
@@ -27,9 +29,21 @@ The rename is what makes the command `pkgr`. The binary does not care what it is
 
 Drop `pkgr-windows-x86_64.exe` somewhere on your `PATH`, renamed to `pkgr.exe`.
 
+## macOS
+
+The macOS binaries are not signed or notarised, so macOS quarantines a file downloaded in a browser. Clear the flag, make it executable and rename it:
+
+```bash
+xattr -d com.apple.quarantine pkgr-macos-arm64
+chmod +x pkgr-macos-arm64
+mv pkgr-macos-arm64 /usr/local/bin/pkgr
+```
+
+Use `pkgr-macos-x86_64` on an Intel Mac. If macOS still refuses, allow it under **System Settings → Privacy & Security**.
+
 ## Verify
 
-`SHA256SUMS` on each release has the checksums: `sha256sum -c SHA256SUMS` on Linux, `Get-FileHash` on Windows.
+`SHA256SUMS` on each release has the checksums: `sha256sum -c SHA256SUMS` on Linux, `shasum -a 256 -c SHA256SUMS` on macOS, `Get-FileHash` on Windows.
 
 ```bash
 pkgr -version

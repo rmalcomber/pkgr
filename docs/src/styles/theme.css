@@ -15,6 +15,9 @@
   --sl-color-accent-high: #8fdde8;
   --sl-color-text-accent: #8fdde8;
   --sl-font: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  /* Release banner: blue (shared standard). */
+  --sl-color-banner-bg: #2c5fa8;
+  --sl-color-banner-text: #f2f7ff;
 }
 
 :root[data-theme='light'] {

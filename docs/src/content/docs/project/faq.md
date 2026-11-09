@@ -31,7 +31,7 @@ On purpose. It hand-rolls the two things it needs (a JSON scanner and a terminal
 
 ### Is there a macOS binary?
 
-Not yet. The unix terminal code should work on macOS but has not been run. Build from source with `./build.sh`.
+Yes, from 0.0.2: `pkgr-macos-arm64` (Apple silicon) and `pkgr-macos-x86_64` (Intel). They are not signed or notarised, so see [Install](/getting-started/install/) for the quarantine step.
 
 ### How do I support it?
 
