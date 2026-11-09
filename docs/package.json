@@ -1,0 +1,20 @@
+{
+  "name": "pkgr-docs",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "scripts": {
+    "dev": "astro dev",
+    "build": "astro build",
+    "preview": "astro preview"
+  },
+  "dependencies": {
+    "@astrojs/markdown-remark": "^7.3.6",
+    "@astrojs/starlight": "^0.42.9",
+    "astro": "^7.4.7",
+    "sharp": "^0.35.5"
+  },
+  "devDependencies": {
+    "starlight-links-validator": "^0.27.0"
+  }
+}
